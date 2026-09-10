@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+		<title>Certamen Cartis</title>
+		<style>
+html, body, #canvas {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+body {
+	color: white;
+	background-color: black;
+	overflow: hidden;
+	touch-action: none;
+}
+
+#canvas {
+	display: block;
+}
+
+#canvas:focus {
+	outline: none;
+}
+
+#status, #status-splash, #status-progress {
+	position: absolute;
+	left: 0;
+	right: 0;
+}
+
+#status, #status-splash {
+	top: 0;
+	bottom: 0;
+}
+
+#status {
+	background-color: #242424;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	align-items: center;
+	visibility: hidden;
+}
+
+#status-splash {
+	max-height: 100%;
+	max-width: 100%;
+	margin: auto;
+}
+
+#status-splash.show-image--false {
+	display: none;
+}
+
+#status-splash.fullsize--true {
+	height: 100%;
+	width: 100%;
+	object-fit: contain;
+}
+
+#status-splash.use-filter--false {
+	image-rendering: pixelated;
+}
+
+#status-progress, #status-notice {
+	display: none;
+}
+
+#status-progress {
+	bottom: 10%;
+	width: 50%;
+	margin: 0 auto;
+}
+
+#status-notice {
+	background-color: #5b3943;
+	border-radius: 0.5rem;
+	border: 1px solid #9b3943;
+	color: #e0e0e0;
+	font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
+	line-height: 1.3;
+	margin: 0 2rem;
+	overflow: hidden;
+	padding: 1rem;
+	text-align: center;
+	z-index: 1;
+}
+		</style>
+		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+<link rel="manifest" href="index.manifest.json">
+
+	</head>
+	<body>
+		<canvas id="canvas">
+			Your browser does not support the canvas tag.
+		</canvas>
+
+		<noscript>
+			Your browser does not support JavaScript.
+		</noscript>
+
+		<div id="status">
+			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
+			<progress id="status-progress"></progress>
+			<div id="status-notice"></div>
+		</div>
+
+		<script src="index.js"></script>
+		<script>
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":39115716,"index.wasm":37685705},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
+const GODOT_THREADS_ENABLED = false;
+const engine = new Engine(GODOT_CONFIG);
+
+(function () {
+	const statusOverlay = document.getElementById('status');
+	const statusProgress = document.getElementById('status-progress');
+	const statusNotice = document.getElementById('status-notice');
+
+	let initializing = true;
+	let statusMode = '';
+
+	function setStatusMode(mode) {
+		if (statusMode === mode || !initializing) {
+			return;
+		}
+		if (mode === 'hidden') {
+			statusOverlay.remove();
+			initializing = false;
+			return;
+		}
+		statusOverlay.style.visibility = 'visible';
+		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
+		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
+		statusMode = mode;
+	}
+
+	function setStatusNotice(text) {
+		while (statusNotice.lastChild) {
+			statusNotice.removeChild(statusNotice.lastChild);
+		}
+		const lines = text.split('\n');
+		lines.forEach((line) => {
+			statusNotice.appendChild(document.createTextNode(line));
+			statusNotice.appendChild(document.createElement('br'));
+		});
+	}
+
+	function displayFailureNotice(err) {
+		console.error(err);
+		if (err instanceof Error) {
+			setStatusNotice(err.message);
+		} else if (typeof err === 'string') {
+			setStatusNotice(err);
+		} else {
+			setStatusNotice('An unknown error occurred.');
+		}
+		setStatusMode('notice');
+		initializing = false;
+	}
+
+	const missing = Engine.getMissingFeatures({
+		threads: GODOT_THREADS_ENABLED,
+	});
+
+	if (missing.length !== 0) {
+		if (GODOT_CONFIG['serviceWorker'] && GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] && 'serviceWorker' in navigator) {
+			let serviceWorkerRegistrationPromise;
+			try {
+				serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
+			} catch (err) {
+				serviceWorkerRegistrationPromise = Promise.reject(new Error('Service worker registration failed.'));
+			}
+			// There's a chance that installing the service worker would fix the issue
+			Promise.race([
+				serviceWorkerRegistrationPromise.then((registration) => {
+					if (registration != null) {
+						return Promise.reject(new Error('Service worker already exists.'));
+					}
+					return registration;
+				}).then(() => engine.installServiceWorker()),
+				// For some reason, `getRegistration()` can stall
+				new Promise((resolve) => {
+					setTimeout(() => resolve(), 2000);
+				}),
+			]).then(() => {
+				// Reload if there was no error.
+				window.location.reload();
+			}).catch((err) => {
+				console.error('Error while registering service worker:', err);
+			});
+		} else {
+			// Display the message as usual
+			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
+			displayFailureNotice(missingMsg + missing.join('\n'));
+		}
+	} else {
+		setStatusMode('progress');
+		engine.startGame({
+			'onProgress': function (current, total) {
+				if (current > 0 && total > 0) {
+					statusProgress.value = current;
+					statusProgress.max = total;
+				} else {
+					statusProgress.removeAttribute('value');
+					statusProgress.removeAttribute('max');
+				}
+			},
+		}).then(() => {
+			setStatusMode('hidden');
+		}, displayFailureNotice);
+	}
+}());
+		</script>
+	
+<!-- cc-gate-injected : pont web-app (install + orientation). Injecté par WebPostExport. -->
+<script>
+(function () {
+  var deferred = null;
+  var notify = null;
+
+  // Chrome n'affiche plus de banniere : on capte l'evenement et on le stocke.
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferred = e;
+    if (notify) { try { notify(); } catch (err) {} }
+  });
+  window.addEventListener('appinstalled', function () { deferred = null; });
+
+  // Godot s'enregistre une fois demarre. L'evenement a pu se declencher AVANT
+  // (le .wasm met plusieurs secondes a booter) : dans ce cas on rappelle tout
+  // de suite, sinon la notification serait perdue.
+  window.ccOnInstallAvailable = function (cb) {
+    notify = cb;
+    if (deferred) { try { cb(); } catch (err) {} }
+  };
+
+  window.ccCanInstall = function () { return deferred !== null; };
+
+  window.ccPromptInstall = function () {
+    if (!deferred) return;
+    var d = deferred;
+    deferred = null;
+    d.prompt();
+  };
+
+  // screen.orientation.lock() n'est permis QU'EN plein ecran. Dans un onglet on
+  // le demande donc au passage — l'appel vient d'un clic Godot, donc on est
+  // dans la fenetre d'activation utilisateur. Dans un PWA installe en
+  // display:fullscreen, c'est deja acquis.
+  window.ccOrientationLock = function (mode) {
+    var el = document.documentElement;
+    var step = Promise.resolve();
+    if (!document.fullscreenElement && el.requestFullscreen) {
+      step = el.requestFullscreen().catch(function () {});
+    }
+    step.then(function () {
+      if (screen.orientation && screen.orientation.lock) {
+        return screen.orientation.lock(mode).catch(function () {});
+      }
+    }).catch(function () {});
+  };
+
+  window.ccOrientationUnlock = function () {
+    try {
+      if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
+    } catch (e) {}
+  };
+})();
+</script>
+
+<!-- Barre de saisie native. Injectée par WebPostExport. -->
+<style>
+#cc-backdrop{position:fixed;inset:0;z-index:100000;display:none;
+ background:rgba(0,0,0,.45)}
+#cc-backdrop.on{display:block}
+#cc-bar{position:fixed;top:0;left:0;right:0;z-index:100001;display:none;
+ gap:8px;padding:10px;background:#0d0a17;border-bottom:1px solid #6b5f34;
+ font-family:system-ui,-apple-system,sans-serif;box-sizing:border-box}
+#cc-bar.on{display:flex}
+#cc-bar input{flex:1;min-width:0;font-size:17px;padding:12px;border-radius:8px;
+ border:1px solid #6b5f34;background:#efe6cd;color:#241a08;font-family:inherit}
+#cc-bar button{padding:12px 20px;font-size:16px;font-weight:600;border:0;
+ border-radius:8px;background:#d9c86f;color:#241a08;font-family:inherit}
+</style>
+<div id="cc-backdrop"></div>
+<div id="cc-bar">
+  <input id="cc-field" autocomplete="off" />
+  <button id="cc-ok">OK</button>
+</div>
+<script>
+(function () {
+  var bar = document.getElementById('cc-bar');
+  var backdrop = document.getElementById('cc-backdrop');
+  var field = document.getElementById('cc-field');
+  var ok = document.getElementById('cc-ok');
+  var current = null;
+
+  // Le canvas Godot ne doit RIEN recevoir tant que la barre est ouverte.
+  // Sans ca : le clavier fait retrecir le viewport, le formulaire centre
+  // remonte sous la barre, et un tap sur l'input reveille le gui_input du
+  // champ qui se trouve dessous -> ccInputShow est rappelee avec un autre id
+  // et le texte part dans le mauvais champ.
+  //
+  // Le backdrop SUFFIT : il est au-dessus du canvas, donc un tap dans la zone
+  // du jeu le cible lui et n'atteint jamais le canvas.
+  //
+  // NE JAMAIS poser de stopPropagation en capture sur #cc-bar : la barre est
+  // un ancetre du bouton OK, l'evenement serait tue avant de l'atteindre et
+  // OK ne repondrait plus.
+  ['pointerdown','pointerup','mousedown','mouseup','touchstart','touchend']
+    .forEach(function (evt) {
+      backdrop.addEventListener(evt, function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }, true);
+    });
+
+  // Tap hors de la barre : on valide plutot que d'annuler (aucune saisie
+  // perdue) et ca sert d'issue de secours si OK ne repond pas.
+  backdrop.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    submit();
+  }, true);
+
+  // Appelée depuis Godot via JavaScriptBridge.
+  window.ccInputShow = function (id, value, kind, placeholder, cb) {
+    // Deja ouverte : on ignore. Un tap parasite ne peut plus detourner l'id.
+    if (current) return;
+    current = { id: id, cb: cb };
+    // type=email : le clavier virtuel affiche @ et . sur sa page principale,
+    // au lieu de les cacher dans la page symboles.
+    field.type = (kind === 'password') ? 'password'
+               : (kind === 'email') ? 'email' : 'text';
+    field.setAttribute('inputmode', kind === 'email' ? 'email' : 'text');
+    field.value = value || '';
+    field.placeholder = placeholder || '';
+    // Anti-clavier-intelligent : pas de majuscule auto ni d'autocorrection,
+    // qui corrompent silencieusement un mot de passe.
+    field.setAttribute('autocapitalize', 'off');
+    field.setAttribute('autocorrect', 'off');
+    field.setAttribute('spellcheck', 'false');
+    backdrop.classList.add('on');
+    bar.classList.add('on');
+    field.focus();
+    field.select();
+  };
+
+  function submit() {
+    if (!current) return;
+    var c = current;
+    current = null;
+    bar.classList.remove('on');
+    backdrop.classList.remove('on');
+    var v = field.value;
+    field.blur();
+    field.value = '';           // ne jamais laisser un mot de passe dans le DOM
+    try { c.cb(c.id, v); } catch (e) { console.error('ccInput', e); }
+  }
+
+  ok.addEventListener('click', submit);
+  field.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); submit(); }
+  });
+})();
+</script>
+</body>
+</html>
+
